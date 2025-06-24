@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List
 import logging
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -37,6 +38,11 @@ async def collect_bottles(bottles: List[Bottle]):
         if not bottles:
             raise HTTPException(status_code=400, detail="No bottles provided")
         
+        # Log incoming request
+        logger.info(f"Received {len(bottles)} bottles")
+        for i, bottle in enumerate(bottles):
+            logger.info(f"Bottle {i+1}: character='{bottle.character}' at ({bottle.coordinates.x}, {bottle.coordinates.y})")
+        
         # Find grid dimensions
         max_x = max(bottle.coordinates.x for bottle in bottles)
         max_y = max(bottle.coordinates.y for bottle in bottles)
@@ -63,15 +69,19 @@ async def collect_bottles(bottles: List[Bottle]):
         
         message = '\n'.join(message_lines)
         
-        # Log the message for debugging
-        logger.info(f"Grid dimensions: {grid_width}x{grid_height}")
-        logger.info(f"Revealed message:\n{message}")
-        
-        return {
+        # Create response
+        response = {
             "message": message,
             "grid_dimensions": {"width": grid_width, "height": grid_height},
             "bottles_processed": len(bottles)
         }
+        
+        # Log the message and full response
+        logger.info(f"Grid dimensions: {grid_width}x{grid_height}")
+        logger.info(f"Revealed message:\n{message}")
+        logger.info(f"Full response being sent: {json.dumps(response, indent=2)}")
+        
+        return response
         
     except Exception as e:
         logger.error(f"Error processing bottles: {str(e)}")
