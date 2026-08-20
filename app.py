@@ -2,13 +2,17 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List
 import logging
-import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Message in a Bottle API", version="1.0.0")
+
+# Bounds to keep an unauthenticated request from allocating an enormous grid
+# (grid size is (max_x+1)*(max_y+1)) or flooding the logs and OOM-ing the pod.
+MAX_BOTTLES = 10000
+MAX_COORD = 1000
 
 class Coordinates(BaseModel):
     x: int
@@ -37,12 +41,21 @@ async def collect_bottles(bottles: List[Bottle]):
     try:
         if not bottles:
             raise HTTPException(status_code=400, detail="No bottles provided")
-        
-        # Log incoming request
+
+        if len(bottles) > MAX_BOTTLES:
+            raise HTTPException(status_code=400, detail=f"Too many bottles (max {MAX_BOTTLES})")
+
+        # Reject out-of-range coordinates before allocating the grid.
+        for bottle in bottles:
+            x, y = bottle.coordinates.x, bottle.coordinates.y
+            if not (0 <= x <= MAX_COORD and 0 <= y <= MAX_COORD):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Coordinates must be between 0 and {MAX_COORD}",
+                )
+
         logger.info(f"Received {len(bottles)} bottles")
-        for i, bottle in enumerate(bottles):
-            logger.info(f"Bottle {i+1}: character='{bottle.character}' at ({bottle.coordinates.x}, {bottle.coordinates.y})")
-        
+
         # Find grid dimensions
         max_x = max(bottle.coordinates.x for bottle in bottles)
         max_y = max(bottle.coordinates.y for bottle in bottles)
@@ -76,16 +89,17 @@ async def collect_bottles(bottles: List[Bottle]):
             "bottles_processed": len(bottles)
         }
         
-        # Log the message and full response
-        logger.info(f"Grid dimensions: {grid_width}x{grid_height}")
-        logger.info(f"Revealed message:\n{message}")
-        logger.info(f"Full response being sent: {json.dumps(response, indent=2)}")
-        
+        # Log only sizes, not the (potentially large) rendered message/response.
+        logger.info(f"Grid dimensions: {grid_width}x{grid_height}, message length {len(message)}")
+
         return response
-        
+
+    except HTTPException:
+        # Let intended 4xx responses through unchanged instead of masking them as 500s.
+        raise
     except Exception as e:
         logger.error(f"Error processing bottles: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 if __name__ == "__main__":
     import uvicorn
