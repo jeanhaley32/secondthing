@@ -2,7 +2,7 @@
 
 from fastapi.testclient import TestClient
 
-from app import app, MAX_COORD
+from app import app, MAX_COORD, MAX_BOTTLES
 
 client = TestClient(app)
 
@@ -43,3 +43,12 @@ def test_negative_coordinate_is_rejected():
 def test_boundary_coordinate_is_allowed():
     resp = client.post("/collect-bottles", json=[_bottle("X", MAX_COORD, 0)])
     assert resp.status_code == 200
+
+
+def test_too_many_bottles_is_rejected():
+    # The coordinate bound caps the grid, not the request body, so the count
+    # needs its own limit. One over is enough to prove the boundary.
+    many = [_bottle("X", 0, 0) for _ in range(MAX_BOTTLES + 1)]
+    resp = client.post("/collect-bottles", json=many)
+    assert resp.status_code == 400
+    assert str(MAX_BOTTLES) in resp.json()["detail"]

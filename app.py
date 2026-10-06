@@ -14,6 +14,11 @@ app = FastAPI(title="Message in a Bottle API", version="1.0.0")
 # us build a multi-billion-cell grid and OOM the pod. 1000 gives a generous
 # 1001x1001 ceiling for any legitimate message.
 MAX_COORD = 1000
+# Bounding coordinates caps the GRID, but not the request. The bottle list is
+# parsed and iterated whatever its length, so an attacker can still send a
+# million in-range bottles. Carried over from PR #3, which bounded the count
+# but not the coordinates; neither bound substitutes for the other.
+MAX_BOTTLES = 10000
 
 class Coordinates(BaseModel):
     x: int
@@ -42,6 +47,10 @@ async def collect_bottles(bottles: List[Bottle]):
     try:
         if not bottles:
             raise HTTPException(status_code=400, detail="No bottles provided")
+
+        if len(bottles) > MAX_BOTTLES:
+            raise HTTPException(
+                status_code=400, detail=f"Too many bottles (max {MAX_BOTTLES})")
 
         logger.info(f"Received {len(bottles)} bottles")
 
